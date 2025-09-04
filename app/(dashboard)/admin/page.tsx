@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { deletePoll } from "@/app/lib/actions/poll-actions";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/lib/context/auth-context";
+import { useRouter } from "next/navigation";
 
 interface Poll {
   id: string;
@@ -21,13 +23,32 @@ interface Poll {
 }
 
 export default function AdminPage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    fetchAllPolls();
-  }, []);
+    if (!authLoading && user) {
+      // Check if user has admin privileges
+      // For demo purposes, check if email contains 'admin' or specific admin users
+      const adminEmails = ['admin@alxpolly.com', 'admin@example.com'];
+      const userIsAdmin = adminEmails.includes(user.email || '') || 
+                         user.email?.includes('admin') || 
+                         user.app_metadata?.role === 'admin';
+      
+      if (userIsAdmin) {
+        setIsAdmin(true);
+        fetchAllPolls();
+      } else {
+        router.push('/polls');
+      }
+    } else if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [user, authLoading, router]);
 
   const fetchAllPolls = async () => {
     const supabase = createClient();
@@ -54,8 +75,19 @@ export default function AdminPage() {
     setDeleteLoading(null);
   };
 
-  if (loading) {
-    return <div className="p-6">Loading all polls...</div>;
+  if (authLoading || loading) {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="p-6">
+        <div className="text-center py-8">
+          <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
+          <p className="text-gray-600 mt-2">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -41,7 +41,13 @@ export default function PollCreateForm() {
     >
       <div>
         <Label htmlFor="question">Poll Question</Label>
-        <Input name="question" id="question" required />
+        <Input 
+          name="question" 
+          id="question" 
+          required 
+          maxLength={500}
+          placeholder="Enter your poll question (max 500 characters)"
+        />
       </div>
       <div>
         <Label>Options</Label>
@@ -52,6 +58,8 @@ export default function PollCreateForm() {
               value={opt}
               onChange={(e) => handleOptionChange(idx, e.target.value)}
               required
+              maxLength={200}
+              placeholder={`Option ${idx + 1} (max 200 characters)`}
             />
             {options.length > 2 && (
               <Button type="button" variant="destructive" onClick={() => removeOption(idx)}>

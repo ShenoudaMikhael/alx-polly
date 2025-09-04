@@ -51,6 +51,8 @@ export default function EditPollForm({ poll }: { poll: any }) {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           required
+          maxLength={500}
+          placeholder="Enter your poll question (max 500 characters)"
         />
       </div>
       <div>
@@ -62,6 +64,8 @@ export default function EditPollForm({ poll }: { poll: any }) {
               value={opt}
               onChange={(e) => handleOptionChange(idx, e.target.value)}
               required
+              maxLength={200}
+              placeholder={`Option ${idx + 1} (max 200 characters)`}
             />
             {options.length > 2 && (
               <Button type="button" variant="destructive" onClick={() => removeOption(idx)}>
