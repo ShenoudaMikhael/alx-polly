@@ -8,12 +8,18 @@ import { getPollResults, submitVote, hasUserVoted } from '@/app/lib/actions/poll
 import { useAuth } from '@/app/lib/context/auth-context';
 import { notFound } from 'next/navigation';
 
+/**
+ * Interface defining poll option structure with voting data
+ */
 interface PollOption {
   text: string;
   votes: number;
   percentage: number;
 }
 
+/**
+ * Interface defining complete poll results structure
+ */
 interface PollResults {
   poll: {
     id: string;
@@ -27,7 +33,29 @@ interface PollResults {
   totalVotes: number;
 }
 
+/**
+ * Poll Detail Page Component
+ * 
+ * This component handles both voting and results display for individual polls.
+ * It provides a comprehensive voting interface with real-time results,
+ * ownership-based actions, and proper error handling.
+ * 
+ * Features:
+ * - Interactive voting interface for non-voters
+ * - Real-time results display with visual progress bars
+ * - Ownership-based edit/delete buttons
+ * - Responsive design with proper loading states
+ * - Error handling and user feedback
+ * - Vote prevention for users who already voted
+ * 
+ * Security considerations:
+ * - Server-side vote validation and duplicate prevention
+ * - Ownership verification for edit operations
+ * - Proper error handling for unauthorized actions
+ * - Async parameter handling for Next.js app router
+ */
 export default function PollDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  // Authentication and component state
   const { user } = useAuth();
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [hasVoted, setHasVoted] = useState(false);
@@ -37,6 +65,10 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
   const [error, setError] = useState<string | null>(null);
   const [pollId, setPollId] = useState<string>('');
 
+  /**
+   * Effect to handle async parameter resolution
+   * Next.js app router provides params as a Promise
+   */
   useEffect(() => {
     const loadParams = async () => {
       const resolvedParams = await params;
@@ -45,6 +77,9 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     loadParams();
   }, [params]);
 
+  /**
+   * Effect to load poll data and check voting status when pollId is available
+   */
   useEffect(() => {
     if (pollId) {
       loadPollData();
@@ -52,6 +87,12 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     }
   }, [pollId, user]);
 
+  /**
+   * Loads poll data and results from the server
+   * 
+   * Fetches comprehensive poll information including vote counts
+   * and percentages for results display.
+   */
   const loadPollData = async () => {
     if (!pollId) return;
     
@@ -62,7 +103,7 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
         return;
       }
       if (!results) {
-        notFound();
+        notFound(); // Trigger Next.js 404 page
         return;
       }
       setPollResults(results);
@@ -73,6 +114,12 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  /**
+   * Checks if the current user has already voted on this poll
+   * 
+   * Prevents duplicate voting and determines UI state
+   * (show voting interface vs. results)
+   */
   const checkUserVoted = async () => {
     if (!user || !pollId) return;
     
@@ -84,6 +131,12 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  /**
+   * Handles vote submission with comprehensive error handling
+   * 
+   * Validates selection, submits vote to server, and updates UI state.
+   * Reloads poll data to show updated results after successful vote.
+   */
   const handleVote = async () => {
     if (selectedOption === null || !pollResults || !pollId) return;
     
@@ -96,7 +149,7 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
         setError(result.error);
       } else {
         setHasVoted(true);
-        // Reload poll data to show updated results
+        // Reload poll data to show updated vote counts
         await loadPollData();
       }
     } catch (err) {
@@ -106,10 +159,12 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
+  // Loading state while fetching data
   if (loading) {
     return <div className="max-w-3xl mx-auto py-8">Loading poll...</div>;
   }
 
+  // Error state when poll cannot be loaded
   if (error && !pollResults) {
     return (
       <div className="max-w-3xl mx-auto py-8">
@@ -124,6 +179,7 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  // 404 handling when poll doesn't exist
   if (!pollResults) {
     notFound();
     return null;
@@ -134,10 +190,12 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* Navigation and owner actions header */}
       <div className="flex items-center justify-between">
         <Link href="/polls" className="text-blue-600 hover:underline">
           &larr; Back to Polls
         </Link>
+        {/* Owner-only action buttons */}
         {isOwner && (
           <div className="flex space-x-2">
             <Button variant="outline" asChild>
@@ -147,21 +205,29 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
         )}
       </div>
 
+      {/* Main poll card */}
       <Card>
         <CardHeader>
           <CardTitle className="text-2xl">{poll.question}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Error display for voting/loading errors */}
           {error && (
             <div className="text-red-500 text-sm mb-4">{error}</div>
           )}
           
+          {/* Conditional rendering: Voting interface OR Results display */}
           {!hasVoted && !loading ? (
+            // VOTING INTERFACE - shown to users who haven't voted
             <div className="space-y-3">
               {poll.options.map((option, index) => (
                 <div 
                   key={index} 
-                  className={`p-3 border rounded-md cursor-pointer transition-colors ${selectedOption === index ? 'border-blue-500 bg-blue-50' : 'hover:bg-slate-50'}`}
+                  className={`p-3 border rounded-md cursor-pointer transition-colors ${
+                    selectedOption === index 
+                      ? 'border-blue-500 bg-blue-50' 
+                      : 'hover:bg-slate-50'
+                  }`}
                   onClick={() => setSelectedOption(index)}
                 >
                   {option}
@@ -176,28 +242,34 @@ export default function PollDetailPage({ params }: { params: Promise<{ id: strin
               </Button>
             </div>
           ) : (
+            // RESULTS DISPLAY - shown to users who have voted or when viewing results
             <div className="space-y-4">
               <h3 className="font-medium">Results:</h3>
               {options.map((option, index) => (
                 <div key={index} className="space-y-1">
+                  {/* Option text and vote statistics */}
                   <div className="flex justify-between text-sm">
                     <span>{option.text}</span>
                     <span>{option.percentage}% ({option.votes} votes)</span>
                   </div>
+                  {/* Visual progress bar */}
                   <div className="w-full bg-slate-100 rounded-full h-2.5">
                     <div 
-                      className="bg-blue-600 h-2.5 rounded-full" 
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
                       style={{ width: `${option.percentage}%` }}
                     ></div>
                   </div>
                 </div>
               ))}
+              {/* Total vote count */}
               <div className="text-sm text-slate-500 pt-2">
                 Total votes: {totalVotes}
               </div>
             </div>
           )}
         </CardContent>
+        
+        {/* Poll metadata footer */}
         <CardFooter className="text-sm text-slate-500 flex justify-between">
           <span>Created on {new Date(poll.created_at).toLocaleDateString()}</span>
         </CardFooter>
