@@ -430,38 +430,31 @@ export async function updatePoll(pollId: string, formData: FormData) {
 export async function getPollResults(pollId: string) {
   const supabase = await createClient();
   
-  // Fetch poll data
-  const { data: poll, error: pollError } = await supabase
+  // Fetch poll data and its votes in a single query for efficiency
+  const { data: pollWithVotes, error: pollError } = await supabase
     .from("polls")
-    .select("*")
+    .select("*, votes(option_index)")
     .eq("id", pollId)
     .single();
 
-  if (pollError || !poll) {
+  if (pollError || !pollWithVotes) {
     return { results: null, error: "Poll not found." };
   }
 
-  // Fetch all votes for this poll
-  const { data: votes, error: votesError } = await supabase
-    .from("votes")
-    .select("option_index")
-    .eq("poll_id", pollId);
-
-  if (votesError) {
-    return { results: null, error: votesError.message };
-  }
+  // Extract poll data and votes. The 'votes' property is dynamically added by the query.
+  const { votes, ...poll } = pollWithVotes as any;
 
   // Calculate vote counts for each option
   const optionCounts = new Array(poll.options.length).fill(0);
-  votes?.forEach(vote => {
+  (votes as { option_index: number }[])?.forEach(vote => {
     // Validate vote data before counting
-    if (vote.option_index < optionCounts.length) {
+    if (vote.option_index >= 0 && vote.option_index < optionCounts.length) {
       optionCounts[vote.option_index]++;
     }
   });
 
   // Calculate totals and percentages
-  const totalVotes = votes?.length || 0;
+  const totalVotes = (votes as any[])?.length || 0;
   const results = {
     poll,
     options: poll.options.map((option: string, index: number) => ({
