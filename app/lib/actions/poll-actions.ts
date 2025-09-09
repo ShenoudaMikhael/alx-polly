@@ -411,6 +411,35 @@ export async function updatePoll(pollId: string, formData: FormData) {
   return { error: null };
 }
 
+// Types for better type safety
+interface Vote {
+  option_index: number;
+}
+
+interface Poll {
+  id: string;
+  question: string;
+  options: string[];
+  user_id: string;
+  created_at: string;
+}
+
+interface PollWithVotes extends Poll {
+  votes: Vote[];
+}
+
+interface PollOptionResult {
+  text: string;
+  votes: number;
+  percentage: number;
+}
+
+interface PollResults {
+  poll: Poll;
+  options: PollOptionResult[];
+  totalVotes: number;
+}
+
 /**
  * Retrieves poll results with vote counts and percentages
  * 
@@ -422,50 +451,129 @@ export async function updatePoll(pollId: string, formData: FormData) {
  * @returns Promise<{results: PollResults | null, error: string | null}> - Formatted poll results
  * 
  * Features:
- * - Calculates vote counts per option
- * - Computes percentage distribution
+ * - Calculates vote counts per option with proper type safety
+ * - Computes percentage distribution with rounding
  * - Handles zero-vote scenarios safely
+ * - Validates vote data integrity
  * - Returns poll metadata along with results
+ * 
+ * Security considerations:
+ * - Validates poll ID parameter
+ * - Handles malformed vote data gracefully
+ * - Provides detailed error messages for debugging
  */
 export async function getPollResults(pollId: string) {
   const supabase = await createClient();
   
-  // Fetch poll data and its votes in a single query for efficiency
-  const { data: pollWithVotes, error: pollError } = await supabase
-    .from("polls")
-    .select("*, votes(option_index)")
-    .eq("id", pollId)
-    .single();
-
-  if (pollError || !pollWithVotes) {
-    return { results: null, error: "Poll not found." };
+  // Validate input parameter
+  if (!pollId || typeof pollId !== 'string' || pollId.trim().length === 0) {
+    return { results: null, error: "Invalid poll ID provided." };
   }
 
-  // Extract poll data and votes. The 'votes' property is dynamically added by the query.
-  const { votes, ...poll } = pollWithVotes as any;
+  try {
+    // Fetch poll data and its votes in a single query for efficiency
+    const { data: pollWithVotes, error: pollError } = await supabase
+      .from("polls")
+      .select(`
+        id,
+        question,
+        options,
+        user_id,
+        created_at,
+        votes(option_index)
+      `)
+      .eq("id", pollId.trim())
+      .single();
 
-  // Calculate vote counts for each option
-  const optionCounts = new Array(poll.options.length).fill(0);
-  (votes as { option_index: number }[])?.forEach(vote => {
-    // Validate vote data before counting
-    if (vote.option_index >= 0 && vote.option_index < optionCounts.length) {
-      optionCounts[vote.option_index]++;
+    if (pollError) {
+      // Handle specific error types
+      if (pollError.code === 'PGRST116') {
+        return { results: null, error: "Poll not found." };
+      }
+      return { results: null, error: `Database error: ${pollError.message}` };
+    }
+
+    if (!pollWithVotes) {
+      return { results: null, error: "Poll not found." };
+    }
+
+    // Type-safe extraction of poll data and votes
+    const { votes, ...poll } = pollWithVotes as PollWithVotes;
+    
+    // Validate poll data structure
+    if (!poll.options || !Array.isArray(poll.options) || poll.options.length === 0) {
+      return { results: null, error: "Invalid poll data: missing or empty options." };
+    }
+
+    // Calculate vote counts for each option with improved validation
+    const optionCounts = calculateVoteCounts(votes || [], poll.options.length);
+    
+    // Calculate total votes
+    const totalVotes = (votes || []).length;
+    
+    // Build formatted results with type safety
+    const results: PollResults = {
+      poll,
+      options: poll.options.map((optionText, index) => ({
+        text: optionText,
+        votes: optionCounts[index],
+        percentage: calculatePercentage(optionCounts[index], totalVotes)
+      })),
+      totalVotes
+    };
+
+    return { results, error: null };
+    
+  } catch (error) {
+    // Handle unexpected errors
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
+    return { results: null, error: `Failed to fetch poll results: ${errorMessage}` };
+  }
+}
+
+/**
+ * Calculates vote counts for each poll option with validation
+ * 
+ * @param votes - Array of vote records
+ * @param optionCount - Number of options in the poll
+ * @returns Array of vote counts per option
+ */
+function calculateVoteCounts(votes: Vote[], optionCount: number): number[] {
+  const optionCounts = new Array(optionCount).fill(0);
+  
+  votes.forEach((vote, voteIndex) => {
+    // Comprehensive vote validation
+    if (!vote || typeof vote.option_index !== 'number') {
+      console.warn(`Invalid vote data at index ${voteIndex}:`, vote);
+      return;
+    }
+    
+    const optionIndex = vote.option_index;
+    
+    // Validate option index bounds
+    if (optionIndex >= 0 && optionIndex < optionCount && Number.isInteger(optionIndex)) {
+      optionCounts[optionIndex]++;
+    } else {
+      console.warn(`Invalid option index ${optionIndex} for vote at index ${voteIndex}`);
     }
   });
+  
+  return optionCounts;
+}
 
-  // Calculate totals and percentages
-  const totalVotes = (votes as any[])?.length || 0;
-  const results = {
-    poll,
-    options: poll.options.map((option: string, index: number) => ({
-      text: option,
-      votes: optionCounts[index],
-      percentage: totalVotes > 0 ? Math.round((optionCounts[index] / totalVotes) * 100) : 0
-    })),
-    totalVotes
-  };
-
-  return { results, error: null };
+/**
+ * Calculates percentage with proper rounding and zero handling
+ * 
+ * @param votes - Number of votes for this option
+ * @param totalVotes - Total number of votes
+ * @returns Rounded percentage (0-100)
+ */
+function calculatePercentage(votes: number, totalVotes: number): number {
+  if (totalVotes === 0 || votes === 0) {
+    return 0;
+  }
+  
+  return Math.round((votes / totalVotes) * 100);
 }
 
 /**
